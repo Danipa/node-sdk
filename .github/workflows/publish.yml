@@ -1,0 +1,70 @@
+name: Publish Node.js SDK to npm
+
+on:
+  push:
+    tags: ['node-v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Generate SDK from OpenAPI spec
+        run: |
+          npm install -g @openapitools/openapi-generator-cli
+          openapi-generator-cli generate -c openapi-generator-config.yml
+          cp src/webhook.ts generated/
+
+      - name: Install and build
+        working-directory: generated
+        run: |
+          npm install
+          npm run build
+
+      - name: Run tests
+        working-directory: generated
+        run: npm test
+
+      - name: Publish to npm
+        working-directory: generated
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate SDK
+        run: |
+          npm install -g @openapitools/openapi-generator-cli
+          openapi-generator-cli generate -c openapi-generator-config.yml
+          cp src/webhook.ts generated/
+
+      - name: Install and test
+        working-directory: generated
+        run: |
+          npm install
+          npm run build
+          npm test
+
+      - name: Run webhook helper tests
+        run: npx tsx test/webhook.test.ts
