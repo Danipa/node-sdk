@@ -1,77 +1,62 @@
-import { DanipaWebhook } from '../src/webhook';
-import assert from 'node:assert';
+import { describe, expect, it } from 'vitest';
+import { DanipaWebhook } from '../src/webhook.js';
 
 const SECRET = 'whsec_test_secret_for_unit_tests';
 const PAYLOAD = '{"event":"payment.completed","amount":100}';
 
-let passed = 0;
-let failed = 0;
+describe('DanipaWebhook.verify', () => {
+  it('accepts a valid signature', () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, ts);
+    expect(DanipaWebhook.verify(PAYLOAD, sig, String(ts), SECRET)).toBe(true);
+  });
 
-function test(name: string, fn: () => void) {
-  try {
-    fn();
-    passed++;
-    console.log(`  PASS: ${name}`);
-  } catch (e: any) {
-    failed++;
-    console.log(`  FAIL: ${name} — ${e.message}`);
-  }
-}
+  it('rejects an invalid signature', () => {
+    const ts = Math.floor(Date.now() / 1000);
+    expect(DanipaWebhook.verify(PAYLOAD, 'sha256=0000', String(ts), SECRET)).toBe(false);
+  });
 
-test('valid signature accepted', () => {
-  const ts = Math.floor(Date.now() / 1000);
-  const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, ts);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, sig, String(ts), SECRET), true);
+  it('rejects an expired timestamp (replay window)', () => {
+    const ts = Math.floor(Date.now() / 1000) - 600;
+    const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, ts);
+    expect(DanipaWebhook.verify(PAYLOAD, sig, String(ts), SECRET)).toBe(false);
+  });
+
+  it('rejects a future-dated timestamp (replay window)', () => {
+    const ts = Math.floor(Date.now() / 1000) + 600;
+    const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, ts);
+    expect(DanipaWebhook.verify(PAYLOAD, sig, String(ts), SECRET)).toBe(false);
+  });
+
+  it('rejects empty inputs', () => {
+    expect(DanipaWebhook.verify('', 'sig', '123', SECRET)).toBe(false);
+    expect(DanipaWebhook.verify(PAYLOAD, '', '123', SECRET)).toBe(false);
+    expect(DanipaWebhook.verify(PAYLOAD, 'sig', '', SECRET)).toBe(false);
+    expect(DanipaWebhook.verify(PAYLOAD, 'sig', '123', '')).toBe(false);
+  });
 });
 
-test('invalid signature rejected', () => {
-  const ts = Math.floor(Date.now() / 1000);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, 'sha256=0000', String(ts), SECRET), false);
-});
+describe('DanipaWebhook.computeSignature', () => {
+  it('produces sha256=<64-hex-chars>', () => {
+    const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, 1700000000);
+    expect(sig).toMatch(/^sha256=[0-9a-f]{64}$/);
+  });
 
-test('expired timestamp rejected', () => {
-  const ts = Math.floor(Date.now() / 1000) - 600;
-  const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, ts);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, sig, String(ts), SECRET), false);
-});
+  it('changes the signature when the timestamp changes', () => {
+    const sig1 = DanipaWebhook.computeSignature(PAYLOAD, SECRET, 1700000000);
+    const sig2 = DanipaWebhook.computeSignature(PAYLOAD, SECRET, 1700000001);
+    expect(sig1).not.toBe(sig2);
+  });
 
-test('future timestamp rejected', () => {
-  const ts = Math.floor(Date.now() / 1000) + 600;
-  const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, ts);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, sig, String(ts), SECRET), false);
+  it('matches the cross-SDK fixture for {"test":true} @ 1700000000', () => {
+    // Fixed vector — every SDK (Node / Java / future PHP / Python) must
+    // produce the same string for these inputs. Regenerate ONLY if the
+    // signing algorithm changes; treat any unintended drift as a bug.
+    const sig = DanipaWebhook.computeSignature(
+      '{"test":true}',
+      'whsec_fixed_test_secret',
+      1700000000,
+    );
+    expect(sig).toBe('sha256=fa1ac332722a04bacd306e53df8eba930d488fbb821ef6ca0cc00041ab5bc140');
+  });
 });
-
-test('empty inputs rejected', () => {
-  assert.strictEqual(DanipaWebhook.verify('', 'sig', '123', SECRET), false);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, '', '123', SECRET), false);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, 'sig', '', SECRET), false);
-  assert.strictEqual(DanipaWebhook.verify(PAYLOAD, 'sig', '123', ''), false);
-});
-
-test('signature format is sha256=<hex64>', () => {
-  const sig = DanipaWebhook.computeSignature(PAYLOAD, SECRET, 1700000000);
-  assert.ok(sig.startsWith('sha256='));
-  assert.strictEqual(sig.substring(7).length, 64);
-});
-
-test('different timestamps produce different signatures', () => {
-  const sig1 = DanipaWebhook.computeSignature(PAYLOAD, SECRET, 1700000000);
-  const sig2 = DanipaWebhook.computeSignature(PAYLOAD, SECRET, 1700000001);
-  assert.notStrictEqual(sig1, sig2);
-});
-
-test('cross-language compatibility — known vector', () => {
-  // Fixed test vector that all 3 SDKs must agree on
-  const sig = DanipaWebhook.computeSignature(
-    '{"test":true}',
-    'whsec_fixed_test_secret',
-    1700000000
-  );
-  // This value can be computed by any implementation and hardcoded here
-  // for cross-SDK verification. Re-generate if the algorithm changes.
-  assert.ok(sig.startsWith('sha256='), 'should be sha256 format');
-  console.log(`    Known vector: ${sig}`);
-});
-
-console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
-if (failed > 0) process.exit(1);
