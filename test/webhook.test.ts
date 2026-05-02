@@ -1,5 +1,19 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DanipaWebhook } from '../src/webhook.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FIXTURE_PATH = join(__dirname, '..', '..', 'fixtures', 'webhook-hmac.json');
+type Vector = {
+  name: string;
+  payload: string;
+  secret: string;
+  timestamp: number;
+  expectedSignature: string;
+};
+const fixture: { vectors: Vector[] } = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'));
 
 const SECRET = 'whsec_test_secret_for_unit_tests';
 const PAYLOAD = '{"event":"payment.completed","amount":100}';
@@ -48,15 +62,14 @@ describe('DanipaWebhook.computeSignature', () => {
     expect(sig1).not.toBe(sig2);
   });
 
-  it('matches the cross-SDK fixture for {"test":true} @ 1700000000', () => {
-    // Fixed vector — every SDK (Node / Java / future PHP / Python) must
-    // produce the same string for these inputs. Regenerate ONLY if the
-    // signing algorithm changes; treat any unintended drift as a bug.
-    const sig = DanipaWebhook.computeSignature(
-      '{"test":true}',
-      'whsec_fixed_test_secret',
-      1700000000,
-    );
-    expect(sig).toBe('sha256=fa1ac332722a04bacd306e53df8eba930d488fbb821ef6ca0cc00041ab5bc140');
+  // Cross-SDK fixture parity — every Danipa SDK (Node, Java, future PHP /
+  // Python / Go) MUST produce the exact `expectedSignature` for each vector
+  // in `sdks/fixtures/webhook-hmac.json`. Drift means a webhook will validate
+  // in one SDK but reject in another — release-blocker.
+  describe.each(fixture.vectors)('cross-SDK fixture: $name', (v) => {
+    it('matches expectedSignature', () => {
+      expect(DanipaWebhook.computeSignature(v.payload, v.secret, v.timestamp))
+        .toBe(v.expectedSignature);
+    });
   });
 });
