@@ -104,11 +104,14 @@ describe('Danipa client', () => {
       fetch: fetchMock as unknown as typeof globalThis.fetch,
     });
 
+    // Vitest 4 fails the test if the request promise rejects while we're
+    // inside runAllTimersAsync (it's "unhandled" until the next microtask).
+    // Attach the rejection assertion eagerly so a handler exists at the
+    // moment the final 5xx surfaces.
     const promise = danipa.wallets.getBalance();
-    // Drain the backoff timers between attempts.
+    const assertion = expect(promise).rejects.toBeInstanceOf(DanipaApiError);
     await vi.runAllTimersAsync();
-
-    await expect(promise).rejects.toBeInstanceOf(DanipaApiError);
+    await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -122,9 +125,9 @@ describe('Danipa client', () => {
     });
 
     const promise = danipa.wallets.getBalance();
+    const assertion = expect(promise).rejects.toBeInstanceOf(DanipaNetworkError);
     await vi.runAllTimersAsync();
-
-    await expect(promise).rejects.toBeInstanceOf(DanipaNetworkError);
+    await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
