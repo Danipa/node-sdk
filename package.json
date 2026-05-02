@@ -6,11 +6,10 @@
   "homepage": "https://developer.danipa.com/sdks",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/paboagye/danipa-digital-platform.git",
-    "directory": "sdks/node"
+    "url": "git+https://github.com/Danipa/node-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/paboagye/danipa-digital-platform/issues"
+    "url": "https://github.com/Danipa/node-sdk/issues"
   },
   "keywords": [
     "danipa",
@@ -60,6 +59,7 @@
     "vitest": "^4.0.0"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }
