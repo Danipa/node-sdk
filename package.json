@@ -1,6 +1,6 @@
 {
   "name": "@danipa/sdk",
-  "version": "0.2.0-dev",
+  "version": "0.2.0-rc.0",
   "description": "Official Node.js SDK for the Danipa payments API — collections, disbursements, wallets, payment links, invoices, webhook verification.",
   "license": "MIT",
   "homepage": "https://developer.danipa.com/sdks",
