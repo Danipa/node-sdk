@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { DanipaWebhook } from '../src/webhook.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FIXTURE_PATH = join(__dirname, '..', '..', 'fixtures', 'webhook-hmac.json');
+// Vendored copy of sdks/fixtures/webhook-hmac.json. Lives next to the test
+// because Node's mirror (Danipa/node-sdk) re-runs npm test as part of its
+// publish workflow, and the mirror's tree only contains sdks/node/ — not
+// the cross-SDK sdks/fixtures/ dir. Source of truth still lives at
+// sdks/fixtures/webhook-hmac.json; a CI guard (sdk-node-ci.yml) enforces
+// byte-for-byte equality with that source file.
+const FIXTURE_PATH = join(__dirname, 'webhook-hmac.fixture.json');
 type Vector = {
   name: string;
   payload: string;
