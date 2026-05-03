@@ -1,0 +1,87 @@
+name: Publish @danipa/sdk
+
+# Tag-driven npm publish for the Danipa Node.js SDK.
+#
+# IMPORTANT: This file is the SOURCE OF TRUTH for the mirror's publish
+# workflow. It lives at sdks/node/.github/workflows/publish.yml in the
+# monorepo so that `git subtree split --prefix=sdks/node` carries it
+# into every tag tree on Danipa/node-sdk. GitHub Actions resolves
+# tag-fired workflows from the commit being pushed (not from the default
+# branch), so the workflow file MUST be present in the tag's tree for
+# the publish to fire.
+#
+# Why a mirror-resident workflow at all (vs publishing direct from the
+# monorepo): npm rejects provenance bundles whose source repo is
+# private. The OIDC claim from a workflow running in Danipa/node-sdk
+# (public) resolves to a public source, which is what unblocks
+# `npm publish --provenance`. PR #330 dropped --provenance specifically
+# because the monorepo is private.
+#
+# Source of truth for the SDK CODE: paboagye/danipa-digital-platform
+# → sdks/node/. Don't push directly to Danipa/node-sdk — edit upstream
+# and tag.
+#
+# Repo setup required (one-time, on Danipa/node-sdk):
+#   NPM_TOKEN  granular access token, scoped to @danipa/sdk only,
+#              "Bypass 2FA when publishing" checked.
+#              Settings → Secrets and variables → Actions
+#
+# Workflow-injection safety: only the tag ref is interpolated, and only
+# through env: into a quoted shell variable. No untrusted GitHub event
+# input flows into run: blocks.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for npm provenance OIDC
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag matches package version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Publishing @danipa/sdk@$PKG_VERSION with provenance"
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm with provenance
+        # `--provenance` is also implied by publishConfig.provenance:true
+        # in package.json, but pass it explicitly so any future package.json
+        # change can't silently drop attestation.
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
