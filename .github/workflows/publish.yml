@@ -53,7 +53,8 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Verify tag matches package version
+      - name: Verify tag matches package version + decide dist-tag
+        id: meta
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
@@ -64,7 +65,17 @@ jobs:
             echo "::error::Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
             exit 1
           fi
-          echo "Publishing @danipa/sdk@$PKG_VERSION with provenance"
+          # Pre-release versions (rc.N, beta.N, alpha.N, a.N, b.N, ...) publish
+          # under the `next` dist-tag so `npm install @danipa/sdk` keeps resolving
+          # to the previous stable. Clean X.Y.Z publishes under `latest`.
+          # Mirror of the Java workflow's autoPublish regex.
+          if [[ "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            NPM_TAG=latest
+          else
+            NPM_TAG=next
+          fi
+          echo "Publishing @danipa/sdk@$PKG_VERSION → npm dist-tag '$NPM_TAG' with provenance"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Install
         run: npm ci
@@ -82,6 +93,10 @@ jobs:
         # `--provenance` is also implied by publishConfig.provenance:true
         # in package.json, but pass it explicitly so any future package.json
         # change can't silently drop attestation.
-        run: npm publish --access public --provenance
+        # `--tag` is required for pre-release versions or npm defaults to
+        # promoting them to `latest` (which would break `npm install` for
+        # stable consumers).
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
+        run: npm publish --access public --provenance --tag "$NPM_TAG"
